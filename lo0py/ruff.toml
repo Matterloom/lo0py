@@ -1,0 +1,18 @@
+# Enable all rules...
+select = ["ALL"]
+# Except
+#  * D203 (one blank line before class docstring) which directly contradicts
+#    D211 (no blank line before class docstring).
+#    (one blank line) before classes.
+#  * D213 (multiline comments have a blank line to start) which directly
+#    contradicts D212 (comments start on first line).
+#  * ANN101 (type annotation for `self`).
+#  * FIX002 (Line contains TODO) since a link to a ticket already needs to be made.
+ignore = ["D203", "D213", "ANN101", "FIX002"]
+show-source = true
+
+[mccabe]
+max-complexity = 10
+
+[pylint]
+max-args = 7

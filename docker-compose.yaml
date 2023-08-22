@@ -1,0 +1,188 @@
+---
+version: '3'
+
+services:
+  ### Customer backend.
+  # Write data to be used.
+  data_populator:
+    image: "alpine"
+    volumes:
+      - "data:/data"
+      - "sockets:/sockets"
+    command:
+      - "sh"
+      - "-c"
+      - >-
+        echo hello > /data/index.html &&
+        dd if=/dev/urandom of=/data/small bs=1024 count=1024 &&
+        dd if=/dev/urandom of=/data/rnd bs=1024 count=40960 &&
+        chown 101:101 /sockets
+
+  # Serve the data.
+  upstream:
+    image: "nginx:1-alpine"
+    volumes:
+      - "data:/usr/share/nginx/html:ro"
+    healthcheck:
+      test: "curl --fail localhost"
+      retries: 5
+      start_period: "5s"
+      start_interval: "1s"
+      interval: "2s"
+    depends_on:
+      data_populator:
+        condition: "service_completed_successfully"
+
+  ### Loopback.
+  # Loopback app.
+  lo0app:
+    build:
+      dockerfile: "../docker/Dockerfile.lo0app"
+      context: "lo0py"
+    image: "lo0app"
+    user: "101:101"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "poetry run python -m lo0py"
+    volumes:
+      - "sockets:/var/run/lo0app"
+    # Match the nginx container.
+    environment:
+      LO0APP_TESTING: "True"
+    healthcheck:
+      test: "nc -z localhost 22"
+      retries: 5
+      start_period: "5s"
+      start_interval: "2s"
+      interval: "2s"
+
+  # Internet-facing proxy server (normally Caddy).
+  proxy:
+    image: "nginx:1-alpine"
+    volumes:
+      - "./docker/proxy/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "sockets:/var/run/lo0app"
+    healthcheck:
+      test: "nc -z localhost 80"
+      retries: 5
+      start_period: "5s"
+      start_interval: "2s"
+      interval: "2s"
+
+  ### SSH connections to loopback app.
+  # Two instances to allow testing parallel connections.
+  client0:
+    build:
+      dockerfile: "docker/Dockerfile.ssh_client"
+    init: true
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - >-
+        (echo y && tail -f /dev/null) |
+        sshpass -px ssh \
+                          -tt \
+                          -o RequestTTY=yes \
+                          -o StrictHostKeyChecking=accept-new \
+                          -R foo0:443:upstream:80 \
+                          lo0app
+    restart: "always"
+    depends_on:
+      upstream:
+        condition: "service_healthy"
+      lo0app:
+        condition: "service_healthy"
+    # Used for health-checking.
+    volumes:
+      - "sockets:/var/run/lo0app"
+    healthcheck:
+      test: "ls /var/run/lo0app/forward-foo0.free.lo.app.sock"
+      retries: 10
+      start_period: "5s"
+      start_interval: "2s"
+      interval: "1s"
+
+  client1:
+    build:
+      dockerfile: "docker/Dockerfile.ssh_client"
+    init: true
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - >-
+        (echo y && tail -f /dev/null) |
+        sshpass -px ssh \
+                          -tt \
+                          -o RequestTTY=yes \
+                          -o StrictHostKeyChecking=accept-new \
+                          -R foo1:443:upstream:80 \
+                          lo0app
+    restart: "always"
+    depends_on:
+      upstream:
+        condition: "service_healthy"
+      lo0app:
+        condition: "service_healthy"
+    # Used for health-checking.
+    volumes:
+      - "sockets:/var/run/lo0app"
+    healthcheck:
+      test: "ls /var/run/lo0app/forward-foo1.free.lo.app.sock"
+      retries: 10
+      start_period: "5s"
+      start_interval: "2s"
+      interval: "1s"
+
+  ### Benchmarking instances.
+  bench0a:
+    build:
+      dockerfile: "docker/Dockerfile.ab"
+    image: "ab"
+    init: true
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - "ab -n 200 -c 50 http://proxy:80/rnd"
+    restart: "always"
+    depends_on:
+      client0:
+        condition: "service_healthy"
+      proxy:
+        condition: "service_healthy"
+
+  bench0b:
+    build:
+      dockerfile: "docker/Dockerfile.ab"
+    image: "ab"
+    init: true
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - "ab -n 8000 -c 50 http://proxy:80/small"
+    restart: "always"
+    depends_on:
+      client0:
+        condition: "service_healthy"
+      proxy:
+        condition: "service_healthy"
+
+  bench1:
+    build:
+      dockerfile: "docker/Dockerfile.ab"
+    image: "ab"
+    init: true
+    entrypoint: "/bin/sh"
+    command:
+      - "-c"
+      - "ab -n 400 -c 50 http://proxy:81/rnd"
+    restart: "always"
+    depends_on:
+      client1:
+        condition: "service_healthy"
+      proxy:
+        condition: "service_healthy"
+
+volumes:
+  sockets:
+  data:

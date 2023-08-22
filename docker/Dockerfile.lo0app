@@ -1,0 +1,12 @@
+FROM python:3-alpine AS base
+ENV PATH /home/lo0app/.local/bin:$PATH
+RUN addgroup -g 101 -S lo0app && \
+    adduser -G lo0app -S -h /home/lo0app -s /bin/sh -u 101 lo0app && \
+    su lo0app -c "pip install pipx" && \
+    su lo0app -c "pipx install poetry" && \
+    su lo0app -c "pip uninstall -y pipx" && \
+    rm -Rf /home/lo0app/.cache
+
+COPY --chown=101:101 . /src
+WORKDIR /src
+RUN su lo0app -c "poetry install --without=dev"

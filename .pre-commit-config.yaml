@@ -1,0 +1,38 @@
+---
+repos:
+  - repo: "local"
+    hooks:
+      - id: "check-python-format"
+        name: "black"
+        language: "system"
+        entry: "sh -c 'cd lo0py; poetry run black --check -q .'"
+        files: ".*\\.py$"
+        require_serial: true
+
+      - id: "check-python-type"
+        name: "mypy"
+        language: "system"
+        entry: "sh -c 'cd lo0py; echo ba; poetry run mypy --strict .'"
+        files: ".*\\.py$"
+        require_serial: true
+
+      - id: "check-python-security"
+        name: "bandit"
+        language: "system"
+        entry: "sh -c 'cd lo0py; poetry run bandit -r .'"
+        files: ".*\\.py$"
+        require_serial: true
+
+      - id: "check-python-lint"
+        name: "ruff"
+        language: "system"
+        entry: "sh -c 'cd lo0py; poetry run ruff .'"
+        files: ".*\\.py$"
+        require_serial: true
+
+      - id: "check-yaml-lint"
+        name: "yamllint"
+        language: "system"
+        entry: "sh -c 'cd lo0py; poetry run yamllint ..'"
+        files: ".*\\.ya?ml$"
+        require_serial: true
